@@ -14,115 +14,435 @@
 			referrerpolicy="no-referrer"
 		/>
 		<link rel="stylesheet" href="index.css" />
+
+		<!-- QR Code and Barcode libraries are imported as ES modules in index.js -->
 	</head>
 	<body>
-		<div class="container my-4">
-			<h1>Phomemo D30 Web Bluetooth</h1>
-			<nav class="mb-3">
-				<div class="nav nav-tabs" id="nav-tab" role="tablist">
-					<button
-						class="nav-link active"
-						id="nav-text-tab"
-						data-bs-toggle="tab"
-						data-bs-target="#nav-text"
-						type="button"
-						role="tab"
-						aria-controls="nav-text"
-						aria-selected="true"
-					>
-						Text
-					</button>
-					<button
-						class="nav-link"
-						id="nav-barcode-tab"
-						data-bs-toggle="tab"
-						data-bs-target="#nav-barcode"
-						type="button"
-						role="tab"
-						aria-controls="nav-barcode"
-						aria-selected="false"
-					>
-						Barcode
-					</button>
-				</div>
-			</nav>
-			<form class="col-lg-6">
-				<div class="tab-content mb-3" id="nav-tabContent">
-					<div
-						class="tab-pane show active"
-						id="nav-text"
-						role="tabpanel"
-						aria-labelledby="nav-text-tab"
-						tabindex="0"
-					>
-						<h2>Text</h2>
-						<label for="inputFontSize" class="form-label">Font size</label>
-						<div class="input-group mb-2">
-							<input
-								type="number"
-								step="1"
-								min="1"
-								value="48"
-								size="10"
-								class="form-control flex-grow-0"
-								style="width: 4rem"
-								id="inputFontSize"
-							/>
-							<span class="input-group-text">px</span>
+		<div class="container-fluid my-4">
+			<h2><b>Phomemo D30 Web Bluetooth</b></h2>
+			<div style="height: 10px"></div>
+			<div class="row">
+				<!-- Main content: Form controls and Preview -->
+				<div class="col-md-12">
+					<form id="mainForm">
+						<div class="tab-content mb-3" id="nav-tabContent">
+							<div
+								class="tab-pane show active"
+								id="nav-text"
+								role="tabpanel"
+								aria-labelledby="nav-text-tab"
+								tabindex="0"
+							>
+								<!-- Text Settings -->
+								<div class="row mb-3">
+									<div class="col-md-3">
+										<h4>Text Settings</h4>
+										<div class="mb-3">
+											<label for="inputText" class="form-label">Text to print</label>
+											<textarea class="form-control" id="inputText" rows="3">Hello world</textarea>
+										</div>
+										<div class="mb-3">
+											<label for="fontFamily" class="form-label">Font family</label>
+											<select class="form-select" id="fontFamily">
+												<option value="Arial, sans-serif">Arial</option>
+												<option value="Helvetica, sans-serif">Helvetica</option>
+												<option value="'Times New Roman', serif">Times New Roman</option>
+												<option value="'Courier New', monospace">Courier New</option>
+												<option value="Georgia, serif">Georgia</option>
+												<option value="Verdana, sans-serif">Verdana</option>
+												<option value="'Comic Sans MS', cursive">Comic Sans MS</option>
+												<option value="Impact, sans-serif">Impact</option>
+											</select>
+										</div>
+										<div class="mb-3">
+											<label for="inputFontSize" class="form-label">Font size</label>
+											<div class="input-group">
+												<input
+													type="number"
+													step="1"
+													min="8"
+													max="200"
+													value="36"
+													class="form-control"
+													id="inputFontSize"
+												/>
+												<span class="input-group-text">px</span>
+											</div>
+										</div>
+										<div class="mb-3">
+											<label for="fontWeight" class="form-label">Font weight</label>
+											<select class="form-select" id="fontWeight">
+												<option value="normal">Normal</option>
+												<option value="bold">Bold</option>
+												<option value="lighter">Light</option>
+											</select>
+										</div>
+										<div class="mb-3">
+											<label for="textAlign" class="form-label">Text alignment</label>
+											<select class="form-select" id="textAlign">
+												<option value="center">Center</option>
+												<option value="left">Left</option>
+												<option value="right">Right</option>
+											</select>
+										</div>
+										<div class="mb-3">
+											<div class="form-check">
+												<input class="form-check-input" type="checkbox" id="verticalText" />
+												<label class="form-check-label" for="verticalText">
+													Vertical text (stack letters)
+												</label>
+											</div>
+										</div>
+									</div>
+
+									<!-- Image Settings -->
+									<div class="col-md-3">
+										<h4>Image Settings</h4>
+										<div class="mb-3" id="imagePreviewGroup" style="display: none">
+											<label class="form-label">Image preview</label>
+											<div class="d-flex gap-2">
+												<div class="flex-fill text-center">
+													<small>Original</small>
+													<canvas
+														id="imagePreviewOriginal"
+														class="img-preview border rounded"
+													></canvas>
+												</div>
+												<div class="flex-fill text-center">
+													<small>Processed</small>
+													<canvas
+														id="imagePreviewProcessed"
+														class="img-preview border rounded"
+													></canvas>
+												</div>
+											</div>
+										</div>
+										<div class="mb-3">
+											<label for="inputImage" class="form-label">Upload image</label>
+											<input class="form-control" type="file" id="inputImage" accept="image/*" />
+										</div>
+										<div class="mb-3">
+											<label for="imagePosition" class="form-label">Image position</label>
+											<select class="form-select" id="imagePosition">
+												<option value="above">Above text</option>
+												<option value="below">Below text</option>
+												<option value="left">Left of text</option>
+												<option value="right">Right of text</option>
+												<option value="background">Behind text</option>
+												<option value="none">None (text only)</option>
+											</select>
+										</div>
+										<div class="mb-3">
+											<label for="imageSize" class="form-label">Image size (%)</label>
+											<input
+												type="range"
+												class="form-range"
+												min="10"
+												max="100"
+												step="5"
+												value="50"
+												id="imageSize"
+											/>
+											<div class="form-text">
+												<span id="imageSizeValue">50</span>% of available space
+											</div>
+										</div>
+										<div class="mb-3">
+											<label for="ditherAlgorithm" class="form-label">Dithering algorithm</label>
+											<select class="form-select" id="ditherAlgorithm">
+												<option value="floyd">Floyd–Steinberg</option>
+												<option value="atkinson">Atkinson</option>
+												<option value="threshold">Threshold</option>
+												<option value="ordered2">Ordered Bayer 2x2</option>
+												<option value="ordered4">Ordered Bayer 4x4</option>
+												<option value="ordered8">Ordered Bayer 8x8</option>
+											</select>
+										</div>
+										<div class="mb-3">
+											<label for="threshold" class="form-label">Threshold</label>
+											<input
+												type="range"
+												class="form-range"
+												min="0"
+												max="255"
+												step="1"
+												value="128"
+												id="threshold"
+											/>
+											<div class="form-text">
+												<span id="thresholdValue">128</span>
+											</div>
+										</div>
+										<div class="mb-3">
+											<label for="brightness" class="form-label">Brightness</label>
+											<input
+												type="range"
+												class="form-range"
+												min="-100"
+												max="100"
+												step="1"
+												value="0"
+												id="brightness"
+											/>
+											<div class="form-text">
+												<span id="brightnessValue">0</span>
+											</div>
+										</div>
+										<div class="mb-3">
+											<label for="contrast" class="form-label">Contrast</label>
+											<input
+												type="range"
+												class="form-range"
+												min="-100"
+												max="100"
+												step="1"
+												value="0"
+												id="contrast"
+											/>
+											<div class="form-text">
+												<span id="contrastValue">0</span>
+											</div>
+										</div>
+										<div class="mb-3">
+											<label for="noise" class="form-label">Dither noise</label>
+											<input
+												type="range"
+												class="form-range"
+												min="0"
+												max="50"
+												step="1"
+												value="0"
+												id="noise"
+											/>
+											<div class="form-text">
+												<span id="noiseValue">0</span> (adds randomness to dithering)
+											</div>
+										</div>
+										<div class="mb-3">
+											<label for="imageRotation" class="form-label">Image rotation</label>
+											<select class="form-select" id="imageRotation">
+												<option value="0">0°</option>
+												<option value="90">90°</option>
+												<option value="180">180°</option>
+												<option value="270">270°</option>
+											</select>
+										</div>
+									</div>
+
+									<!-- QR Code & Barcode Settings -->
+									<div class="col-md-3">
+										<h4>QR Code & Barcode</h4>
+										<div class="mb-3">
+											<label for="codeType" class="form-label">Code type</label>
+											<select class="form-select" id="codeType">
+												<option value="none">None</option>
+												<option value="qr">QR Code</option>
+												<option value="barcode">Barcode (CODE128)</option>
+											</select>
+										</div>
+										<div class="mb-3" id="codeDataGroup">
+											<label for="codeData" class="form-label">Code data</label>
+											<textarea
+												class="form-control"
+												id="codeData"
+												rows="2"
+												placeholder="Enter text or data to encode"
+											></textarea>
+										</div>
+										<div class="mb-3" id="codePositionGroup">
+											<label for="codePosition" class="form-label">Code position</label>
+											<select class="form-select" id="codePosition">
+												<option value="above">Above text</option>
+												<option value="below">Below text</option>
+												<option value="left">Left of text</option>
+												<option value="right">Right of text</option>
+												<option value="background">Behind text</option>
+											</select>
+										</div>
+										<div class="mb-3" id="codeSizeGroup">
+											<label for="codeSize" class="form-label">Code size (%)</label>
+											<input
+												type="range"
+												class="form-range"
+												min="10"
+												max="100"
+												step="5"
+												value="30"
+												id="codeSize"
+											/>
+											<div class="form-text">
+												<span id="codeSizeValue">30</span>% of available space
+											</div>
+										</div>
+										<div class="mb-3" id="qrErrorCorrectionGroup" style="display: none">
+											<label for="qrErrorCorrection" class="form-label">QR Error correction</label>
+											<select class="form-select" id="qrErrorCorrection">
+												<option value="L">Low (7%)</option>
+												<option value="M" selected>Medium (15%)</option>
+												<option value="Q">Quartile (25%)</option>
+												<option value="H">High (30%)</option>
+											</select>
+										</div>
+										<div class="mb-3" id="barcodeFormatGroup" style="display: none">
+											<label for="barcodeFormat" class="form-label">Barcode format</label>
+											<select class="form-select" id="barcodeFormat">
+												<option value="CODE128">CODE128</option>
+												<option value="CODE39">CODE39</option>
+												<option value="EAN13">EAN13</option>
+												<option value="EAN8">EAN8</option>
+												<option value="UPC">UPC</option>
+											</select>
+										</div>
+									</div>
+
+									<!-- Preview -->
+									<div class="col-md-3">
+										<h4>Preview</h4>
+										<p class="text-left">Images are sent to printer vertically.</p>
+
+										<div class="d-flex flex-column align-items-center mb-4">
+											<div class="mb-3 align-center-start">
+												<h5 class="text-center">Preview rotation</h5>
+												<div class="btn-group" role="group" aria-label="Preview rotation">
+													<button
+														type="button"
+														class="btn btn-outline-secondary"
+														id="rotateCounterClockwise"
+													>
+														↺ 90° CCW
+													</button>
+													<button
+														type="button"
+														class="btn btn-outline-secondary"
+														id="rotateClockwise"
+													>
+														↻ 90° CW
+													</button>
+												</div>
+											</div>
+
+											<div class="card shadow-sm">
+												<div class="card-body p-1">
+													<div class="preview-container">
+														<canvas id="canvas"></canvas>
+													</div>
+												</div>
+											</div>
+
+											<button type="submit" class="btn btn-primary mt-3" form="mainForm">
+												Connect &amp; print
+											</button>
+										</div>
+
+										<div class="mt-4">
+											<h4>Print offset</h4>
+											<p class="text-muted small">
+												Adjust position to compensate for printer alignment
+											</p>
+
+											<div class="d-flex justify-content-center mb-3">
+												<div class="btn-group-vertical me-3">
+													<button
+														type="button"
+														class="btn btn-outline-secondary btn-sm"
+														id="offsetUp"
+													>
+														↑
+													</button>
+													<div class="btn-group">
+														<button
+															type="button"
+															class="btn btn-outline-secondary btn-sm"
+															id="offsetLeft"
+														>
+															←
+														</button>
+														<button
+															type="button"
+															class="btn btn-outline-secondary btn-sm"
+															id="offsetReset"
+														>
+															⌂
+														</button>
+														<button
+															type="button"
+															class="btn btn-outline-secondary btn-sm"
+															id="offsetRight"
+														>
+															→
+														</button>
+													</div>
+													<button
+														type="button"
+														class="btn btn-outline-secondary btn-sm"
+														id="offsetDown"
+													>
+														↓
+													</button>
+												</div>
+												<div class="align-self-center">
+													<div class="text-center small">
+														<div>X: <span id="offsetXValue">0</span>px</div>
+														<div>Y: <span id="offsetYValue">0</span>px</div>
+													</div>
+												</div>
+											</div>
+
+											<div class="row mb-3">
+												<div class="col-6">
+													<label for="offsetStep" class="form-label">Step size</label>
+													<select class="form-select form-select-sm" id="offsetStep">
+														<option value="1">1px</option>
+														<option value="2">2px</option>
+														<option value="5" selected>5px</option>
+														<option value="10">10px</option>
+														<option value="20">20px</option>
+													</select>
+												</div>
+											</div>
+										</div>
+
+										<div class="mt-4">
+											<h4>Label size</h4>
+											<div class="input-group mb-3">
+												<span class="input-group-text">Width (mm)</span>
+												<input
+													type="number"
+													step="1"
+													class="form-control"
+													value="40"
+													aria-label="Width"
+													id="inputWidth"
+												/>
+												<span class="input-group-text">Height (mm)</span>
+												<input
+													type="number"
+													step="1"
+													class="form-control"
+													value="12"
+													aria-label="Height"
+													id="inputHeight"
+												/>
+											</div>
+										</div>
+									</div>
+								</div>
+							</div>
+							<div
+								class="tab-pane"
+								id="nav-barcode"
+								role="tabpanel"
+								aria-labelledby="nav-barcode-tab"
+								tabindex="0"
+							>
+								<h2>Barcode</h2>
+								<label for="inputBarcode" class="form-label">Barcode data (CODE128)</label>
+								<input type="text" class="form-control" value="123456" id="inputBarcode" />
+							</div>
 						</div>
-						<label for="inputText" class="form-label">Text to print</label>
-						<textarea class="form-control" id="inputText">Hello world</textarea>
-					</div>
-					<div
-						class="tab-pane"
-						id="nav-barcode"
-						role="tabpanel"
-						aria-labelledby="nav-barcode-tab"
-						tabindex="0"
-					>
-						<h2>Barcode</h2>
-						<label for="inputBarcode" class="form-label">Barcode data (CODE128)</label>
-						<input type="text" class="form-control" value="123456" id="inputBarcode" />
-					</div>
+					</form>
 				</div>
-
-				<div>
-					<h2>Label size</h2>
-					<div class="input-group mb-3">
-						<span class="input-group-text">Width (mm)</span>
-						<input
-							type="number"
-							step="1"
-							class="form-control"
-							value="40"
-							aria-label="Width"
-							id="inputWidth"
-						/>
-						<span class="input-group-text">Height (mm)</span>
-						<input
-							type="number"
-							step="1"
-							class="form-control"
-							value="12"
-							aria-label="Height"
-							id="inputHeight"
-						/>
-					</div>
-				</div>
-
-				<div class="d-flex flex-column align-items-start mb-3">
-					<h2>Preview</h2>
-					<p>Images are sent to printer vertically.</p>
-
-					<div class="card shadow-sm">
-						<div class="card-body p-1">
-							<canvas id="canvas"></canvas>
-						</div>
-					</div>
-				</div>
-
-				<button type="submit" class="btn btn-primary">Connect &amp; print</button>
-			</form>
+			</div>
 		</div>
 
 		<div class="toast-container position-fixed bottom-0 start-0 p-3">
@@ -147,20 +467,6 @@
 			</div>
 		</div>
 
-		<script
-			src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/js/bootstrap.min.js"
-			integrity="sha512-ykZ1QQr0Jy/4ZkvKuqWn4iF3lqPZyij9iRv6sGqLRdTPkY69YX6+7wvVGmsdBbiIfN/8OdsI7HABjvEok6ZopQ=="
-			crossorigin="anonymous"
-			referrerpolicy="no-referrer"
-			defer
-		></script>
-		<script
-			src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"
-			integrity="sha512-k2wo/BkbloaRU7gc/RkCekHr4IOVe10kYxJ/Q8dRPl7u3YshAQmg3WfZtIcseEk+nGBdK03fHBeLgXTxRmWCLQ=="
-			crossorigin="anonymous"
-			referrerpolicy="no-referrer"
-			defer
-		></script>
 		<script type="module" src="index.js" defer></script>
 	</body>
 </html>
