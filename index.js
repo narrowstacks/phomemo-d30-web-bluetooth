@@ -126,13 +126,380 @@ const updateRotationButtons = () => {
 };
 
 /**
+ * Advanced image processing helper functions
+ */
+
+/**
+ * Applies gamma correction to image data
+ * @param {ImageData} imgData
+ * @param {number} gamma - gamma value (default 2.2 for screen to linear conversion)
+ * @returns {ImageData}
+ */
+const applyGammaCorrection = (imgData, gamma = 2.2) => {
+	const { data } = imgData;
+	const gammaLUT = new Uint8Array(256);
+
+	// Build gamma lookup table
+	for (let i = 0; i < 256; i++) {
+		gammaLUT[i] = Math.round(255 * Math.pow(i / 255, gamma));
+	}
+
+	// Apply gamma correction
+	for (let i = 0; i < data.length; i += 4) {
+		data[i] = gammaLUT[data[i]]; // R
+		data[i + 1] = gammaLUT[data[i + 1]]; // G
+		data[i + 2] = gammaLUT[data[i + 2]]; // B
+		// Alpha remains unchanged
+	}
+
+	return imgData;
+};
+
+/**
+ * Applies Gaussian blur to image data
+ * @param {ImageData} imgData
+ * @param {number} sigma - blur radius
+ * @returns {ImageData}
+ */
+const applyGaussianBlur = (imgData, sigma = 0.5) => {
+	if (sigma <= 0) return imgData;
+
+	const { width, height, data } = imgData;
+	const output = new Uint8ClampedArray(data);
+
+	// Calculate kernel size and weights
+	const kernelSize = Math.ceil(sigma * 3) * 2 + 1;
+	const kernel = new Float32Array(kernelSize);
+	const center = Math.floor(kernelSize / 2);
+	let sum = 0;
+
+	// Generate Gaussian kernel
+	for (let i = 0; i < kernelSize; i++) {
+		const x = i - center;
+		kernel[i] = Math.exp(-(x * x) / (2 * sigma * sigma));
+		sum += kernel[i];
+	}
+
+	// Normalize kernel
+	for (let i = 0; i < kernelSize; i++) {
+		kernel[i] /= sum;
+	}
+
+	// Horizontal pass
+	for (let y = 0; y < height; y++) {
+		for (let x = 0; x < width; x++) {
+			let r = 0,
+				g = 0,
+				b = 0;
+
+			for (let i = 0; i < kernelSize; i++) {
+				const px = Math.max(0, Math.min(width - 1, x + i - center));
+				const idx = (y * width + px) * 4;
+				const weight = kernel[i];
+
+				r += data[idx] * weight;
+				g += data[idx + 1] * weight;
+				b += data[idx + 2] * weight;
+			}
+
+			const outIdx = (y * width + x) * 4;
+			output[outIdx] = r;
+			output[outIdx + 1] = g;
+			output[outIdx + 2] = b;
+			output[outIdx + 3] = data[outIdx + 3];
+		}
+	}
+
+	// Copy back for vertical pass
+	data.set(output);
+
+	// Vertical pass
+	for (let x = 0; x < width; x++) {
+		for (let y = 0; y < height; y++) {
+			let r = 0,
+				g = 0,
+				b = 0;
+
+			for (let i = 0; i < kernelSize; i++) {
+				const py = Math.max(0, Math.min(height - 1, y + i - center));
+				const idx = (py * width + x) * 4;
+				const weight = kernel[i];
+
+				r += data[idx] * weight;
+				g += data[idx + 1] * weight;
+				b += data[idx + 2] * weight;
+			}
+
+			const outIdx = (y * width + x) * 4;
+			output[outIdx] = r;
+			output[outIdx + 1] = g;
+			output[outIdx + 2] = b;
+			output[outIdx + 3] = data[outIdx + 3];
+		}
+	}
+
+	data.set(output);
+	return imgData;
+};
+
+/**
+ * Applies unsharp mask to enhance edges
+ * @param {ImageData} imgData
+ * @param {number} radius - blur radius for mask
+ * @param {number} amount - enhancement strength (0.5-2.0)
+ * @returns {ImageData}
+ */
+const applyUnsharpMask = (imgData, radius = 1.0, amount = 0.8) => {
+	const { width, height, data } = imgData;
+
+	// Create a copy for the blurred version
+	const blurred = new ImageData(new Uint8ClampedArray(data), width, height);
+	applyGaussianBlur(blurred, radius);
+
+	// Apply unsharp mask formula: original + amount * (original - blurred)
+	for (let i = 0; i < data.length; i += 4) {
+		for (let c = 0; c < 3; c++) {
+			// RGB channels
+			const original = data[i + c];
+			const blur = blurred.data[i + c];
+			const enhanced = original + amount * (original - blur);
+			data[i + c] = Math.max(0, Math.min(255, enhanced));
+		}
+	}
+
+	return imgData;
+};
+
+/**
+ * Applies CLAHE (Contrast Limited Adaptive Histogram Equalization)
+ * @param {ImageData} imgData
+ * @param {number} tileSize - size of tiles for local processing
+ * @param {number} clipLimit - contrast limit (2.0-4.0)
+ * @returns {ImageData}
+ */
+const applyCLAHE = (imgData, tileSize = 16, clipLimit = 2.0) => {
+	const { width, height, data } = imgData;
+	const tilesX = Math.ceil(width / tileSize);
+	const tilesY = Math.ceil(height / tileSize);
+
+	// Convert to grayscale for processing
+	const gray = new Uint8Array(width * height);
+	for (let i = 0; i < gray.length; i++) {
+		const idx = i * 4;
+		gray[i] = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+	}
+
+	// Process each tile
+	const processedGray = new Uint8Array(gray);
+
+	for (let ty = 0; ty < tilesY; ty++) {
+		for (let tx = 0; tx < tilesX; tx++) {
+			const x1 = tx * tileSize;
+			const y1 = ty * tileSize;
+			const x2 = Math.min(x1 + tileSize, width);
+			const y2 = Math.min(y1 + tileSize, height);
+
+			// Build histogram for this tile
+			const hist = new Array(256).fill(0);
+			let pixelCount = 0;
+
+			for (let y = y1; y < y2; y++) {
+				for (let x = x1; x < x2; x++) {
+					const val = gray[y * width + x];
+					hist[val]++;
+					pixelCount++;
+				}
+			}
+
+			// Apply contrast limiting
+			const excess = Math.max(0, Math.max(...hist) - (clipLimit * pixelCount) / 256);
+			if (excess > 0) {
+				const redistribution = excess / 256;
+				for (let i = 0; i < 256; i++) {
+					if (hist[i] > (clipLimit * pixelCount) / 256) {
+						hist[i] = (clipLimit * pixelCount) / 256;
+					}
+					hist[i] += redistribution;
+				}
+			}
+
+			// Create CDF and mapping
+			const cdf = new Array(256);
+			cdf[0] = hist[0];
+			for (let i = 1; i < 256; i++) {
+				cdf[i] = cdf[i - 1] + hist[i];
+			}
+
+			// Normalize CDF to 0-255 range
+			const mapping = new Uint8Array(256);
+			for (let i = 0; i < 256; i++) {
+				mapping[i] = Math.round((cdf[i] / pixelCount) * 255);
+			}
+
+			// Apply mapping to tile
+			for (let y = y1; y < y2; y++) {
+				for (let x = x1; x < x2; x++) {
+					const idx = y * width + x;
+					processedGray[idx] = mapping[gray[idx]];
+				}
+			}
+		}
+	}
+
+	// Apply processed grayscale back to RGB
+	for (let i = 0; i < processedGray.length; i++) {
+		const idx = i * 4;
+		const originalGray = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+		const ratio = originalGray > 0 ? processedGray[i] / originalGray : 1;
+
+		data[idx] = Math.min(255, data[idx] * ratio); // R
+		data[idx + 1] = Math.min(255, data[idx + 1] * ratio); // G
+		data[idx + 2] = Math.min(255, data[idx + 2] * ratio); // B
+	}
+
+	return imgData;
+};
+
+/**
+ * Generates a blue noise threshold map
+ * @param {number} size - size of the threshold map (power of 2)
+ * @returns {Uint8Array}
+ */
+const generateBlueNoiseMap = (size = 64) => {
+	// Simple blue noise approximation using Mitchell's best-candidate algorithm
+	const map = new Uint8Array(size * size);
+	const used = new Array(size * size).fill(false);
+
+	for (let i = 0; i < size * size; i++) {
+		let bestDist = -1;
+		let bestIdx = 0;
+
+		// Try random candidates and pick the one with maximum distance to existing points
+		for (let attempt = 0; attempt < Math.min(100, size * size - i); attempt++) {
+			const candidate = Math.floor(Math.random() * size * size);
+			if (used[candidate]) continue;
+
+			let minDist = Infinity;
+			for (let j = 0; j < size * size; j++) {
+				if (!used[j]) continue;
+
+				const x1 = candidate % size;
+				const y1 = Math.floor(candidate / size);
+				const x2 = j % size;
+				const y2 = Math.floor(j / size);
+
+				const dist = Math.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2);
+				minDist = Math.min(minDist, dist);
+			}
+
+			if (minDist > bestDist) {
+				bestDist = minDist;
+				bestIdx = candidate;
+			}
+		}
+
+		used[bestIdx] = true;
+		map[bestIdx] = Math.floor((i / (size * size)) * 256);
+	}
+
+	return map;
+};
+
+/**
+ * Applies edge detection to identify important edges
+ * @param {ImageData} imgData
+ * @returns {Uint8Array} - edge map (0-255)
+ */
+const detectEdges = (imgData) => {
+	const { width, height, data } = imgData;
+	const edges = new Uint8Array(width * height);
+
+	// Sobel kernels
+	const sobelX = [
+		[-1, 0, 1],
+		[-2, 0, 2],
+		[-1, 0, 1],
+	];
+	const sobelY = [
+		[-1, -2, -1],
+		[0, 0, 0],
+		[1, 2, 1],
+	];
+
+	for (let y = 1; y < height - 1; y++) {
+		for (let x = 1; x < width - 1; x++) {
+			let gx = 0,
+				gy = 0;
+
+			for (let ky = -1; ky <= 1; ky++) {
+				for (let kx = -1; kx <= 1; kx++) {
+					const idx = ((y + ky) * width + (x + kx)) * 4;
+					const intensity = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+
+					gx += intensity * sobelX[ky + 1][kx + 1];
+					gy += intensity * sobelY[ky + 1][kx + 1];
+				}
+			}
+
+			const magnitude = Math.sqrt(gx * gx + gy * gy);
+			edges[y * width + x] = Math.min(255, magnitude);
+		}
+	}
+
+	return edges;
+};
+
+/**
+ * Scales image to exact printer resolution
+ * @param {HTMLImageElement|HTMLCanvasElement} image
+ * @param {number} targetWidth - target width in pixels
+ * @param {number} targetHeight - target height in pixels
+ * @param {string} method - scaling method ("nearest", "bilinear", "lanczos")
+ * @returns {HTMLCanvasElement}
+ */
+const scaleToExactResolution = (image, targetWidth, targetHeight, method = "lanczos") => {
+	const canvas = document.createElement("canvas");
+	const ctx = canvas.getContext("2d");
+
+	canvas.width = targetWidth;
+	canvas.height = targetHeight;
+
+	// Fill with white background
+	ctx.fillStyle = "#ffffff";
+	ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+	if (method === "nearest") {
+		ctx.imageSmoothingEnabled = false;
+	} else {
+		ctx.imageSmoothingEnabled = true;
+		ctx.imageSmoothingQuality = method === "lanczos" ? "high" : "medium";
+	}
+
+	// Scale to fit within target dimensions while maintaining aspect ratio
+	const scaleX = targetWidth / image.width;
+	const scaleY = targetHeight / image.height;
+	const scale = Math.min(scaleX, scaleY);
+
+	const scaledWidth = image.width * scale;
+	const scaledHeight = image.height * scale;
+	const offsetX = (targetWidth - scaledWidth) / 2;
+	const offsetY = (targetHeight - scaledHeight) / 2;
+
+	ctx.drawImage(image, offsetX, offsetY, scaledWidth, scaledHeight);
+
+	return canvas;
+};
+
+/**
  * Applies dithering to image data and returns a 1-bit black/white ImageData.
  * @param {ImageData} imgData
- * @param {"floyd"|"atkinson"|"threshold"} algorithm
+ * @param {"floyd"|"atkinson"|"threshold"|"stucki"|"jarvis"|"sierra"|"burkes"|"blue_noise"} algorithm
  * @param {number} threshold 0-255
  * @param {number} brightness -100 to 100
  * @param {number} contrast -100 to 100
  * @param {number} noise 0-50 (amount of random noise to add)
+ * @param {boolean} serpentine - use serpentine scanning for error diffusion
+ * @param {Uint8Array} edgeMap - optional edge map for edge-aware thresholding
  * @returns {ImageData}
  */
 const ditherImageData = (
@@ -141,7 +508,9 @@ const ditherImageData = (
 	threshold = 128,
 	brightness = 0,
 	contrast = 0,
-	noise = 0
+	noise = 0,
+	serpentine = true,
+	edgeMap = null
 ) => {
 	const { width, height, data } = imgData;
 	const gray = new Float32Array(width * height);
@@ -178,13 +547,47 @@ const ditherImageData = (
 		data[idx * 4 + 3] = 255;
 	};
 
+	// ----- Threshold dithering with edge-aware enhancement -----
 	if (algorithm === "threshold") {
-		for (let i = 0; i < gray.length; i++) setBWPixel(i, gray[i] < threshold ? 0 : 255);
+		for (let i = 0; i < gray.length; i++) {
+			let adjustedThreshold = threshold;
+
+			// Apply edge-aware threshold adjustment if edge map is provided
+			if (edgeMap) {
+				const edgeStrength = edgeMap[i] / 255;
+				// Lower threshold for edges to preserve thin lines
+				adjustedThreshold = threshold - edgeStrength * 30;
+			}
+
+			setBWPixel(i, gray[i] < adjustedThreshold ? 0 : 255);
+		}
+		return imgData;
+	}
+
+	// ----- Blue noise dithering -----
+	if (algorithm === "blue_noise") {
+		const noiseMap = generateBlueNoiseMap(64);
+		const mapSize = 64;
+
+		for (let y = 0; y < height; y++) {
+			for (let x = 0; x < width; x++) {
+				const idx = y * width + x;
+				const noiseIdx = (y % mapSize) * mapSize + (x % mapSize);
+				const noiseThreshold = noiseMap[noiseIdx];
+
+				let adjustedThreshold = noiseThreshold;
+				if (edgeMap) {
+					const edgeStrength = edgeMap[idx] / 255;
+					adjustedThreshold = noiseThreshold - edgeStrength * 40;
+				}
+
+				setBWPixel(idx, gray[idx] < adjustedThreshold ? 0 : 255);
+			}
+		}
 		return imgData;
 	}
 
 	// ----- Ordered dithering (Bayer matrices) -----
-	// Supported identifiers: "ordered2", "ordered4", "ordered8"
 	if (algorithm.startsWith("ordered")) {
 		let matrix;
 		if (algorithm === "ordered2") {
@@ -226,7 +629,13 @@ const ditherImageData = (
 		for (let y = 0; y < height; y++) {
 			for (let x = 0; x < width; x++) {
 				const idx = y * width + x;
-				const thresholdVal = (matrix[y % n][x % n] + 0.5) * scale;
+				let thresholdVal = (matrix[y % n][x % n] + 0.5) * scale;
+
+				if (edgeMap) {
+					const edgeStrength = edgeMap[idx] / 255;
+					thresholdVal -= edgeStrength * 40;
+				}
+
 				setBWPixel(idx, gray[idx] < thresholdVal ? 0 : 255);
 			}
 		}
@@ -234,29 +643,107 @@ const ditherImageData = (
 		return imgData;
 	}
 
+	// ----- Error diffusion algorithms -----
+	// Define error diffusion kernels
+	const errorKernels = {
+		floyd: [
+			{ x: 1, y: 0, weight: 7 / 16 },
+			{ x: -1, y: 1, weight: 3 / 16 },
+			{ x: 0, y: 1, weight: 5 / 16 },
+			{ x: 1, y: 1, weight: 1 / 16 },
+		],
+		atkinson: [
+			{ x: 1, y: 0, weight: 1 / 8 },
+			{ x: 2, y: 0, weight: 1 / 8 },
+			{ x: -1, y: 1, weight: 1 / 8 },
+			{ x: 0, y: 1, weight: 1 / 8 },
+			{ x: 1, y: 1, weight: 1 / 8 },
+			{ x: 0, y: 2, weight: 1 / 8 },
+		],
+		stucki: [
+			{ x: 1, y: 0, weight: 8 / 42 },
+			{ x: 2, y: 0, weight: 4 / 42 },
+			{ x: -2, y: 1, weight: 2 / 42 },
+			{ x: -1, y: 1, weight: 4 / 42 },
+			{ x: 0, y: 1, weight: 8 / 42 },
+			{ x: 1, y: 1, weight: 4 / 42 },
+			{ x: 2, y: 1, weight: 2 / 42 },
+			{ x: -2, y: 2, weight: 1 / 42 },
+			{ x: -1, y: 2, weight: 2 / 42 },
+			{ x: 0, y: 2, weight: 4 / 42 },
+			{ x: 1, y: 2, weight: 2 / 42 },
+			{ x: 2, y: 2, weight: 1 / 42 },
+		],
+		jarvis: [
+			{ x: 1, y: 0, weight: 7 / 48 },
+			{ x: 2, y: 0, weight: 5 / 48 },
+			{ x: -2, y: 1, weight: 3 / 48 },
+			{ x: -1, y: 1, weight: 5 / 48 },
+			{ x: 0, y: 1, weight: 7 / 48 },
+			{ x: 1, y: 1, weight: 5 / 48 },
+			{ x: 2, y: 1, weight: 3 / 48 },
+			{ x: -2, y: 2, weight: 1 / 48 },
+			{ x: -1, y: 2, weight: 3 / 48 },
+			{ x: 0, y: 2, weight: 5 / 48 },
+			{ x: 1, y: 2, weight: 3 / 48 },
+			{ x: 2, y: 2, weight: 1 / 48 },
+		],
+		sierra: [
+			{ x: 1, y: 0, weight: 5 / 32 },
+			{ x: 2, y: 0, weight: 3 / 32 },
+			{ x: -2, y: 1, weight: 2 / 32 },
+			{ x: -1, y: 1, weight: 4 / 32 },
+			{ x: 0, y: 1, weight: 5 / 32 },
+			{ x: 1, y: 1, weight: 4 / 32 },
+			{ x: 2, y: 1, weight: 2 / 32 },
+			{ x: -1, y: 2, weight: 2 / 32 },
+			{ x: 0, y: 2, weight: 3 / 32 },
+			{ x: 1, y: 2, weight: 2 / 32 },
+		],
+		burkes: [
+			{ x: 1, y: 0, weight: 8 / 32 },
+			{ x: 2, y: 0, weight: 4 / 32 },
+			{ x: -2, y: 1, weight: 2 / 32 },
+			{ x: -1, y: 1, weight: 4 / 32 },
+			{ x: 0, y: 1, weight: 8 / 32 },
+			{ x: 1, y: 1, weight: 4 / 32 },
+			{ x: 2, y: 1, weight: 2 / 32 },
+		],
+	};
+
+	const kernel = errorKernels[algorithm] || errorKernels.floyd;
+
 	for (let y = 0; y < height; y++) {
-		for (let x = 0; x < width; x++) {
+		// Serpentine scanning: alternate left-to-right and right-to-left
+		const direction = serpentine && y % 2 === 1 ? -1 : 1;
+		const startX = direction === 1 ? 0 : width - 1;
+		const endX = direction === 1 ? width : -1;
+
+		for (let x = startX; x !== endX; x += direction) {
 			const idx = y * width + x;
 			const oldVal = gray[idx];
-			const newVal = oldVal < threshold ? 0 : 255;
+
+			let adjustedThreshold = threshold;
+			if (edgeMap) {
+				const edgeStrength = edgeMap[idx] / 255;
+				// Lower threshold for edges to preserve detail
+				adjustedThreshold = threshold - edgeStrength * 20;
+			}
+
+			const newVal = oldVal < adjustedThreshold ? 0 : 255;
 			const err = oldVal - newVal;
 			gray[idx] = newVal;
 			setBWPixel(idx, newVal);
 
-			if (algorithm === "floyd") {
-				if (x + 1 < width) gray[idx + 1] += err * (7 / 16);
-				if (x - 1 >= 0 && y + 1 < height) gray[idx + width - 1] += err * (3 / 16);
-				if (y + 1 < height) gray[idx + width] += err * (5 / 16);
-				if (x + 1 < width && y + 1 < height) gray[idx + width + 1] += err * (1 / 16);
-			} else if (algorithm === "atkinson") {
-				if (x + 1 < width) gray[idx + 1] += err / 8;
-				if (x + 2 < width) gray[idx + 2] += err / 8;
-				if (y + 1 < height) {
-					if (x - 1 >= 0) gray[idx + width - 1] += err / 8;
-					gray[idx + width] += err / 8;
-					if (x + 1 < width) gray[idx + width + 1] += err / 8;
+			// Distribute error to neighboring pixels
+			for (const { x: dx, y: dy, weight } of kernel) {
+				const nx = x + dx * direction; // Account for serpentine direction
+				const ny = y + dy;
+
+				if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+					const nIdx = ny * width + nx;
+					gray[nIdx] += err * weight;
 				}
-				if (y + 2 < height) gray[idx + 2 * width] += err / 8;
 			}
 		}
 	}
@@ -299,14 +786,117 @@ const rotateImage = (image, angle) => {
 };
 
 /**
+ * Applies hardware-safe cleanup to 1-bit image data
+ * @param {ImageData} imgData - 1-bit black/white image data
+ * @returns {ImageData}
+ */
+const applyHardwareCleanup = (imgData) => {
+	const { width, height, data } = imgData;
+	const output = new Uint8ClampedArray(data);
+
+	for (let y = 1; y < height - 1; y++) {
+		for (let x = 1; x < width - 1; x++) {
+			const idx = (y * width + x) * 4;
+
+			// Check if this is a single black pixel with no black neighbors
+			if (data[idx] === 0) {
+				// Black pixel
+				let blackNeighbors = 0;
+
+				// Check 8-connected neighbors
+				for (let dy = -1; dy <= 1; dy++) {
+					for (let dx = -1; dx <= 1; dx++) {
+						if (dx === 0 && dy === 0) continue;
+						const nIdx = ((y + dy) * width + (x + dx)) * 4;
+						if (data[nIdx] === 0) blackNeighbors++;
+					}
+				}
+
+				// Remove isolated single black pixels
+				if (blackNeighbors === 0) {
+					output[idx] = output[idx + 1] = output[idx + 2] = 255;
+				}
+			}
+
+			// Thicken 1-pixel lines by checking for thin lines
+			else if (data[idx] === 255) {
+				// White pixel
+				let thinLineDetected = false;
+
+				// Check for horizontal thin lines
+				const leftBlack = x > 0 && data[(y * width + (x - 1)) * 4] === 0;
+				const rightBlack = x < width - 1 && data[(y * width + (x + 1)) * 4] === 0;
+				const topWhite = y > 0 && data[((y - 1) * width + x) * 4] === 255;
+				const bottomWhite = y < height - 1 && data[((y + 1) * width + x) * 4] === 255;
+
+				// Check for vertical thin lines
+				const topBlack = y > 0 && data[((y - 1) * width + x) * 4] === 0;
+				const bottomBlack = y < height - 1 && data[((y + 1) * width + x) * 4] === 0;
+				const leftWhite = x > 0 && data[(y * width + (x - 1)) * 4] === 255;
+				const rightWhite = x < width - 1 && data[(y * width + (x + 1)) * 4] === 255;
+
+				// Fill gaps in thin lines (optional enhancement)
+				if (
+					(leftBlack && rightBlack && topWhite && bottomWhite) ||
+					(topBlack && bottomBlack && leftWhite && rightWhite)
+				) {
+					// This is a gap in a thin line - fill it
+					output[idx] = output[idx + 1] = output[idx + 2] = 0;
+				}
+			}
+		}
+	}
+
+	data.set(output);
+	return imgData;
+};
+
+/**
+ * Applies two-phase diffusion (ordered dither + error diffusion)
+ * @param {ImageData} imgData
+ * @param {number} threshold
+ * @param {number} brightness
+ * @param {number} contrast
+ * @param {number} noise
+ * @param {Uint8Array} edgeMap
+ * @returns {ImageData}
+ */
+const applyTwoPhaseDiffusion = (imgData, threshold, brightness, contrast, noise, edgeMap) => {
+	// Phase 1: Light ordered dithering (4x4 Bayer)
+	const phase1 = ditherImageData(
+		new ImageData(new Uint8ClampedArray(imgData.data), imgData.width, imgData.height),
+		"ordered4",
+		threshold,
+		brightness,
+		contrast,
+		noise,
+		false, // No serpentine for ordered
+		null
+	);
+
+	// Phase 2: Light Floyd-Steinberg on the result
+	return ditherImageData(
+		phase1,
+		"floyd",
+		threshold + 10, // Slightly higher threshold for refinement
+		0, // No additional brightness/contrast adjustment
+		0,
+		0,
+		true, // Use serpentine
+		edgeMap
+	);
+};
+
+/**
  * Processes an image with rotation first, then brightness, contrast, and dithering adjustments
  * @param {HTMLImageElement} image
  * @param {number} brightness -100 to 100
  * @param {number} contrast -100 to 100
- * @param {"floyd"|"atkinson"|"threshold"} algorithm
+ * @param {"floyd"|"atkinson"|"threshold"|"stucki"|"jarvis"|"sierra"|"burkes"|"blue_noise"|"two_phase"} algorithm
  * @param {number} threshold 0-255
  * @param {number} rotation - Rotation angle in degrees (0, 90, 180, 270)
  * @param {number} noise 0-50 (amount of random noise to add)
+ * @param {object} advancedOptions - Advanced processing options
  * @returns {HTMLCanvasElement}
  */
 const processImageWithAdjustments = (
@@ -316,16 +906,40 @@ const processImageWithAdjustments = (
 	algorithm = "floyd",
 	threshold = 128,
 	rotation = 0,
-	noise = 0
+	noise = 0,
+	advancedOptions = {}
 ) => {
+	const {
+		useGammaCorrection = false,
+		gamma = 2.2,
+		usePreFiltering = false,
+		blurSigma = 0.5,
+		unsharpRadius = 1.0,
+		unsharpAmount = 0.8,
+		useCLAHE = false,
+		claheClipLimit = 2.0,
+		claheTileSize = 16,
+		useEdgeAware = false,
+		useHardwareCleanup = false,
+		usePrinterResolution = false,
+		printerWidth = 320,
+		printerHeight = 96,
+		scalingMethod = "lanczos",
+		serpentine = true,
+	} = advancedOptions;
+
 	// IMPORTANT: Apply rotation FIRST to the original image before any other processing
-	// This ensures the rotation happens on the clean original image data
 	let rotatedImage = image;
 	if (rotation !== 0) {
 		rotatedImage = rotateImage(image, rotation);
 	}
 
-	// Create a temporary canvas to process the rotated image
+	// Step 1: Scale to exact printer resolution if requested
+	if (usePrinterResolution) {
+		rotatedImage = scaleToExactResolution(rotatedImage, printerWidth, printerHeight, scalingMethod);
+	}
+
+	// Create a temporary canvas to process the image
 	const tempCanvas = document.createElement("canvas");
 	const tempCtx = tempCanvas.getContext("2d");
 
@@ -336,12 +950,65 @@ const processImageWithAdjustments = (
 	tempCtx.fillStyle = "#ffffff";
 	tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
 
-	// Draw the rotated image on top of white background
+	// Draw the image on top of white background
 	tempCtx.drawImage(rotatedImage, 0, 0);
 
-	// Get image data and apply brightness/contrast/dithering adjustments to the rotated image
-	const imgData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
-	const processedData = ditherImageData(imgData, algorithm, threshold, brightness, contrast, noise);
+	// Get image data for processing
+	let imgData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+
+	// Step 2: Apply gamma correction if enabled
+	if (useGammaCorrection) {
+		imgData = applyGammaCorrection(imgData, gamma);
+	}
+
+	// Step 3: Apply CLAHE if enabled
+	if (useCLAHE) {
+		imgData = applyCLAHE(imgData, claheTileSize, claheClipLimit);
+	}
+
+	// Step 4: Apply pre-filtering if enabled
+	if (usePreFiltering) {
+		// Gaussian blur to reduce noise
+		imgData = applyGaussianBlur(imgData, blurSigma);
+
+		// Unsharp mask to restore edge definition
+		imgData = applyUnsharpMask(imgData, unsharpRadius, unsharpAmount);
+	}
+
+	// Step 5: Generate edge map if edge-aware processing is enabled
+	let edgeMap = null;
+	if (useEdgeAware) {
+		edgeMap = detectEdges(imgData);
+	}
+
+	// Step 6: Apply dithering
+	let processedData;
+	if (algorithm === "two_phase") {
+		processedData = applyTwoPhaseDiffusion(
+			imgData,
+			threshold,
+			brightness,
+			contrast,
+			noise,
+			edgeMap
+		);
+	} else {
+		processedData = ditherImageData(
+			imgData,
+			algorithm,
+			threshold,
+			brightness,
+			contrast,
+			noise,
+			serpentine,
+			edgeMap
+		);
+	}
+
+	// Step 7: Apply hardware-safe cleanup if enabled
+	if (useHardwareCleanup) {
+		processedData = applyHardwareCleanup(processedData);
+	}
 
 	// Put the processed data back
 	tempCtx.putImageData(processedData, 0, 0);
@@ -561,6 +1228,26 @@ const updateCanvasText = async (canvas) => {
 		// Process the image with brightness, contrast, dithering adjustments, and rotation
 		// NOTE: Only use the image rotation setting (from dropdown), not the preview rotation.
 		// Preview rotation is purely visual (CSS transform) and doesn't affect canvas content or printed output.
+		// Collect advanced processing options
+		const advancedOptions = {
+			useGammaCorrection: $("#useGammaCorrection")?.checked || false,
+			gamma: parseFloat($("#gamma")?.value || "2.2"),
+			usePreFiltering: $("#usePreFiltering")?.checked || false,
+			blurSigma: parseFloat($("#blurSigma")?.value || "0.5"),
+			unsharpRadius: 1.0, // Fixed value for now
+			unsharpAmount: parseFloat($("#unsharpAmount")?.value || "0.8"),
+			useCLAHE: $("#useCLAHE")?.checked || false,
+			claheClipLimit: parseFloat($("#claheClipLimit")?.value || "2.0"),
+			claheTileSize: 16, // Fixed value for now
+			useEdgeAware: $("#useEdgeAware")?.checked || false,
+			useHardwareCleanup: $("#useHardwareCleanup")?.checked || false,
+			usePrinterResolution: $("#usePrinterResolution")?.checked || false,
+			printerWidth: canvas.width, // Use current canvas dimensions
+			printerHeight: canvas.height,
+			scalingMethod: "lanczos",
+			serpentine: $("#serpentine")?.checked !== false, // Default to true
+		};
+
 		processedImage = processImageWithAdjustments(
 			uploadedImage,
 			brightness,
@@ -568,7 +1255,8 @@ const updateCanvasText = async (canvas) => {
 			algorithm,
 			threshold,
 			imageRotation,
-			noise
+			noise,
+			advancedOptions
 		);
 
 		const imageSizeRatio = imageSize / 100;
@@ -789,6 +1477,23 @@ const updateImagePreview = () => {
 	// ---------------------------------------------
 	// Processed (may be rotated) preview
 	// ---------------------------------------------
+	// Collect advanced processing options for preview
+	const advancedOptions = {
+		useGammaCorrection: $("#useGammaCorrection")?.checked || false,
+		gamma: parseFloat($("#gamma")?.value || "2.2"),
+		usePreFiltering: $("#usePreFiltering")?.checked || false,
+		blurSigma: parseFloat($("#blurSigma")?.value || "0.5"),
+		unsharpRadius: 1.0,
+		unsharpAmount: parseFloat($("#unsharpAmount")?.value || "0.8"),
+		useCLAHE: $("#useCLAHE")?.checked || false,
+		claheClipLimit: parseFloat($("#claheClipLimit")?.value || "2.0"),
+		claheTileSize: 16,
+		useEdgeAware: $("#useEdgeAware")?.checked || false,
+		useHardwareCleanup: $("#useHardwareCleanup")?.checked || false,
+		usePrinterResolution: false, // Don't use printer resolution for preview
+		serpentine: $("#serpentine")?.checked !== false,
+	};
+
 	const processedTemp = processImageWithAdjustments(
 		uploadedImage,
 		brightness,
@@ -796,7 +1501,8 @@ const updateImagePreview = () => {
 		algorithm,
 		threshold,
 		imageRotation,
-		noise
+		noise,
+		advancedOptions
 	);
 
 	const procScale = Math.min(
@@ -857,6 +1563,15 @@ document.addEventListener("DOMContentLoaded", function () {
 	$all(
 		"#inputText, #inputFontSize, #fontFamily, #fontWeight, #textAlign, #verticalText, #imagePosition, #imageSize, #imageRotation, #ditherAlgorithm, #threshold, #brightness, #contrast, #noise"
 	).forEach((e) => e.addEventListener("input", () => updateCanvasText(canvas)));
+
+	// Advanced processing controls
+	$all(
+		"#useGammaCorrection, #gamma, #usePreFiltering, #blurSigma, #unsharpAmount, #useCLAHE, #claheClipLimit, #useEdgeAware, #useHardwareCleanup, #usePrinterResolution, #serpentine"
+	).forEach((e) => e.addEventListener("input", () => updateCanvasText(canvas)));
+
+	$all(
+		"#useGammaCorrection, #usePreFiltering, #useCLAHE, #useEdgeAware, #useHardwareCleanup, #usePrinterResolution, #serpentine"
+	).forEach((e) => e.addEventListener("change", () => updateCanvasText(canvas)));
 
 	// QR Code and Barcode controls
 	$all(
@@ -926,6 +1641,10 @@ document.addEventListener("DOMContentLoaded", function () {
 	const contrastSlider = $("#contrast");
 	const noiseSlider = $("#noise");
 	const codeSizeSlider = $("#codeSize");
+	const gammaSlider = $("#gamma");
+	const blurSigmaSlider = $("#blurSigma");
+	const unsharpAmountSlider = $("#unsharpAmount");
+	const claheClipLimitSlider = $("#claheClipLimit");
 
 	if (imageSizeSlider) {
 		imageSizeSlider.addEventListener("input", (e) => {
@@ -960,6 +1679,30 @@ document.addEventListener("DOMContentLoaded", function () {
 	if (codeSizeSlider) {
 		codeSizeSlider.addEventListener("input", (e) => {
 			$("#codeSizeValue").textContent = e.target.value;
+		});
+	}
+
+	if (gammaSlider) {
+		gammaSlider.addEventListener("input", (e) => {
+			$("#gammaValue").textContent = e.target.value;
+		});
+	}
+
+	if (blurSigmaSlider) {
+		blurSigmaSlider.addEventListener("input", (e) => {
+			$("#blurSigmaValue").textContent = e.target.value;
+		});
+	}
+
+	if (unsharpAmountSlider) {
+		unsharpAmountSlider.addEventListener("input", (e) => {
+			$("#unsharpAmountValue").textContent = e.target.value;
+		});
+	}
+
+	if (claheClipLimitSlider) {
+		claheClipLimitSlider.addEventListener("input", (e) => {
+			$("#claheClipLimitValue").textContent = e.target.value;
 		});
 	}
 
@@ -1058,6 +1801,15 @@ document.addEventListener("DOMContentLoaded", function () {
 	$all("#ditherAlgorithm, #threshold, #brightness, #contrast, #noise, #imageRotation").forEach(
 		(e) => e.addEventListener("input", updateImagePreview)
 	);
+
+	// Advanced processing controls for preview updates
+	$all(
+		"#useGammaCorrection, #gamma, #usePreFiltering, #blurSigma, #unsharpAmount, #useCLAHE, #claheClipLimit, #useEdgeAware, #useHardwareCleanup, #serpentine"
+	).forEach((e) => e.addEventListener("input", updateImagePreview));
+
+	$all(
+		"#useGammaCorrection, #usePreFiltering, #useCLAHE, #useEdgeAware, #useHardwareCleanup, #serpentine"
+	).forEach((e) => e.addEventListener("change", updateImagePreview));
 
 	// Call once on load
 	updateImagePreview();

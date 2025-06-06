@@ -152,10 +152,16 @@
 											<select class="form-select" id="ditherAlgorithm">
 												<option value="floyd">Floyd–Steinberg</option>
 												<option value="atkinson">Atkinson</option>
+												<option value="stucki">Stucki</option>
+												<option value="jarvis">Jarvis-Judice-Ninke</option>
+												<option value="sierra">Sierra</option>
+												<option value="burkes">Burkes</option>
 												<option value="threshold">Threshold</option>
 												<option value="ordered2">Ordered Bayer 2x2</option>
 												<option value="ordered4">Ordered Bayer 4x4</option>
 												<option value="ordered8">Ordered Bayer 8x8</option>
+												<option value="blue_noise">Blue Noise</option>
+												<option value="two_phase">Two-Phase Diffusion</option>
 											</select>
 										</div>
 										<div class="mb-3">
@@ -226,6 +232,204 @@
 												<option value="180">180°</option>
 												<option value="270">270°</option>
 											</select>
+										</div>
+
+										<!-- Advanced Processing Options -->
+										<div class="accordion mt-4" id="advancedAccordion">
+											<div class="accordion-item">
+												<h2 class="accordion-header">
+													<button
+														class="accordion-button collapsed"
+														type="button"
+														data-bs-toggle="collapse"
+														data-bs-target="#advancedCollapse"
+														aria-expanded="false"
+														aria-controls="advancedCollapse"
+													>
+														Advanced Processing
+													</button>
+												</h2>
+												<div
+													id="advancedCollapse"
+													class="accordion-collapse collapse"
+													data-bs-parent="#advancedAccordion"
+												>
+													<div class="accordion-body">
+														<div class="mb-3">
+															<div class="form-check">
+																<input
+																	class="form-check-input"
+																	type="checkbox"
+																	id="usePrinterResolution"
+																/>
+																<label class="form-check-label" for="usePrinterResolution">
+																	Scale to printer resolution
+																</label>
+																<div class="form-text">
+																	Scales image to exact printer DPI for optimal quality
+																</div>
+															</div>
+														</div>
+
+														<div class="mb-3">
+															<div class="form-check">
+																<input
+																	class="form-check-input"
+																	type="checkbox"
+																	id="useGammaCorrection"
+																/>
+																<label class="form-check-label" for="useGammaCorrection">
+																	Gamma correction
+																</label>
+																<div class="form-text">
+																	Converts screen gamma to printer linear response
+																</div>
+															</div>
+														</div>
+
+														<div class="mb-3">
+															<div class="form-check">
+																<input
+																	class="form-check-input"
+																	type="checkbox"
+																	id="usePreFiltering"
+																/>
+																<label class="form-check-label" for="usePreFiltering">
+																	Pre-filtering (blur + sharpen)
+																</label>
+																<div class="form-text">
+																	Reduces noise and enhances edges before dithering
+																</div>
+															</div>
+														</div>
+
+														<div class="mb-3">
+															<div class="form-check">
+																<input class="form-check-input" type="checkbox" id="useCLAHE" />
+																<label class="form-check-label" for="useCLAHE">
+																	CLAHE contrast enhancement
+																</label>
+																<div class="form-text">
+																	Adaptive histogram equalization for better details
+																</div>
+															</div>
+														</div>
+
+														<div class="mb-3">
+															<div class="form-check">
+																<input class="form-check-input" type="checkbox" id="useEdgeAware" />
+																<label class="form-check-label" for="useEdgeAware">
+																	Edge-aware dithering
+																</label>
+																<div class="form-text">
+																	Preserves thin lines and important edges
+																</div>
+															</div>
+														</div>
+
+														<div class="mb-3">
+															<div class="form-check">
+																<input
+																	class="form-check-input"
+																	type="checkbox"
+																	id="useHardwareCleanup"
+																/>
+																<label class="form-check-label" for="useHardwareCleanup">
+																	Hardware-safe cleanup
+																</label>
+																<div class="form-text">
+																	Removes isolated pixels and thickens thin lines
+																</div>
+															</div>
+														</div>
+
+														<div class="mb-3">
+															<div class="form-check">
+																<input
+																	class="form-check-input"
+																	type="checkbox"
+																	id="serpentine"
+																	checked
+																/>
+																<label class="form-check-label" for="serpentine">
+																	Serpentine scanning
+																</label>
+																<div class="form-text">
+																	Alternates scan direction to reduce banding
+																</div>
+															</div>
+														</div>
+
+														<div class="mb-3">
+															<label for="gamma" class="form-label">Gamma value</label>
+															<input
+																type="range"
+																class="form-range"
+																min="1.0"
+																max="3.0"
+																step="0.1"
+																value="2.2"
+																id="gamma"
+															/>
+															<div class="form-text">
+																<span id="gammaValue">2.2</span> (2.2 = standard screen gamma)
+															</div>
+														</div>
+
+														<div class="mb-3">
+															<label for="blurSigma" class="form-label">Pre-blur strength</label>
+															<input
+																type="range"
+																class="form-range"
+																min="0.1"
+																max="2.0"
+																step="0.1"
+																value="0.5"
+																id="blurSigma"
+															/>
+															<div class="form-text">
+																<span id="blurSigmaValue">0.5</span> (reduces noise before
+																dithering)
+															</div>
+														</div>
+
+														<div class="mb-3">
+															<label for="unsharpAmount" class="form-label">Edge enhancement</label>
+															<input
+																type="range"
+																class="form-range"
+																min="0.0"
+																max="2.0"
+																step="0.1"
+																value="0.8"
+																id="unsharpAmount"
+															/>
+															<div class="form-text">
+																<span id="unsharpAmountValue">0.8</span> (restores edge sharpness)
+															</div>
+														</div>
+
+														<div class="mb-3">
+															<label for="claheClipLimit" class="form-label"
+																>CLAHE clip limit</label
+															>
+															<input
+																type="range"
+																class="form-range"
+																min="1.0"
+																max="4.0"
+																step="0.1"
+																value="2.0"
+																id="claheClipLimit"
+															/>
+															<div class="form-text">
+																<span id="claheClipLimitValue">2.0</span> (prevents
+																over-enhancement)
+															</div>
+														</div>
+													</div>
+												</div>
+											</div>
 										</div>
 									</div>
 
@@ -467,6 +671,12 @@
 			</div>
 		</div>
 
+		<script
+			src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/js/bootstrap.bundle.min.js"
+			integrity="sha512-7Pi/otdlbbCR+LnW+F7PwFcSDJOuUJB3OxtEHbg4vSMvzvJjde4Po1v4BR9Gdc9aXNUNFVUY+SK51wWT8WF0Gg=="
+			crossorigin="anonymous"
+			referrerpolicy="no-referrer"
+		></script>
 		<script type="module" src="index.js" defer></script>
 	</body>
 </html>
